@@ -219,6 +219,7 @@ name = "code-reviewer"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "fastmcp" },
     { name = "python-dotenv" },
     { name = "requests" },
@@ -226,6 +227,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = ">=2026.2.25" },
     { name = "fastmcp", specifier = ">=3.2.4" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "requests", specifier = ">=2.33.1" },
