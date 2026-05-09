@@ -30,7 +30,22 @@ def get_all_prs(owner:str, repo :str):
         response.raise_for_status()
         # print(response.json())
         pr_list = response.json()
-        print(json.dumps(pr_list, indent=2))
+        prs = []
+        for pr in pr_list:
+            print(pr.get('number'))
+            print(pr.get('state'))
+            print(pr.get('title'))
+            print(pr.get('user',{}).get('login'))
+            reviewers = []
+            for reviewer in pr.get('requested_reviewers',[]):
+                reviewers.append(reviewer.get('login'))
+            print(reviewers)
+            print(pr.get('head').get('ref'))
+            print(pr.get('head').get('repo').get('name'))
+            print(pr.get('_links',{}))
+            print(pr.get('base').get('ref'))
+
+        # print(json.dumps(pr_list, indent=2))
     except Exception as e:
         print(f"Error : {e}")
 
@@ -228,13 +243,13 @@ def get_project_struct(owner:str,repo:str,branch:str):
 
 
 if __name__ == "__main__":
-    # get_all_prs("PrinceMishra7", "CodeReviewr")
+    get_all_prs("PrinceMishra7", "CodeReviewr")
     # get_pr_details("PrinceMishra7", "CodeReviewr",1)
     # get_commits_in_pr("PrinceMishra7", "CodeReviewr",1)
     # get_pr_files("PrinceMishra7", "CodeReviewr",1)
     # get_content_of_file("PrinceMishra7", "CodeReviewr","tools/github_tools.py","github_tools")
     # get_readme("PrinceMishra7", "CodeReviewr")
-    get_project_struct("PrinceMishra7","CodeReviewr","main")
+    get_project_struct("PrinceMishra7","CodeReviewr","folder_struct")
 
 
 
