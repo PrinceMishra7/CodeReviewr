@@ -42,7 +42,7 @@ def get_all_prs(owner:str, repo :str):
             print(reviewers)
             print(pr.get('head').get('ref'))
             print(pr.get('head').get('repo').get('name'))
-            print(pr.get('_links',{}))
+            # print(pr.get('_links',{}))
             print(pr.get('base').get('ref'))
 
         # print(json.dumps(pr_list, indent=2))
