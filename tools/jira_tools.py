@@ -74,5 +74,5 @@ def get_full_jira_context(issue_key:str):
     except Exception as e:
         print(f"Error fetching issue details: {e}")
 
-context = get_full_jira_context("SCRUM-5")
-print(context)
+# context = get_full_jira_context("SCRUM-5")
+# print(context)
