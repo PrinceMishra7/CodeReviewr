@@ -121,7 +121,7 @@ def get_commits_of_pr(owner:str,repo:str,pr_number:int) -> str:
     CRITICAL RULES FOR THE AI AGENT:
     1. REVIEW HISTORY: Use this tool to trace the evolutionary timeline of a pull request. Examining individual 
     commit messages helps you understand the developer's step-by-step logic and the intent behind major changes.
-    2. SHA TRACKING: This tool provides shortened 7-character SHAs. Use these SHAs when you need to target a 
+    2. SHA TRACKING: This tool provides full-length SHAs. Use these SHAs when you need to target a 
     specific point in the PR's history or cross-reference individual changes within your review feedback.
     3. CONTEXT EXTENSION: Reviewing the commit message log allows you to catch context that might be missing 
     from the high-level PR description, such as references to issue tickets, bug fixes, or mid-development refactors.
@@ -132,7 +132,7 @@ def get_commits_of_pr(owner:str,repo:str,pr_number:int) -> str:
         pr_number (int): The numeric ID identifying the target pull request.
 
     Returns:
-        str: A markdown table displaying the truncated SHA, author name, timestamp (YYYY-MM-DD), and commit message for each entry.
+        str: A markdown table displaying the SHA, author name, timestamp (YYYY-MM-DD), and commit message for each entry.
     """
     return git_tools.get_commits_in_pr(owner,repo,pr_number)
 
@@ -213,52 +213,70 @@ def get_jira_issue_detail(issue_key:str)->str:
     """
     return jira_tools.get_full_jira_context(issue_key)
 
-
 @mcp.tool()
 def put_review_comment_on_pr(
-    owner:str,
-    repo:str,
-    pr_number:int,
-    body:str,
-    commit_id:str,
-    path:str,
-    subject_type: Literal["file","line"] = "line",
-    line:Optional[int] = None,
-    side:Optional[Literal["LEFT","RIGHT"]] = "RIGHT",
-    start_line:Optional[int] = None,
-    start_side:Optional[Literal["LEFT","RIGHT"]] = None,
-    in_reply_to:Optional[int] = None
-    )->str:
-     
+    owner: str,
+    repo: str,
+    pr_number: int,
+    body: str,
+    commit_id: Optional[str] = None,
+    path: Optional[str] = None,
+    line: Optional[int] = None,
+    side: Optional[Literal["LEFT", "RIGHT"]] = "RIGHT",
+    start_line: Optional[int] = None,
+    start_side: Optional[Literal["LEFT", "RIGHT", "side"]] = None,
+    in_reply_to: Optional[int] = None
+) -> str:
     """
-    Creates a contextual review comment on a specific file diff inside a GitHub Pull Request.
-    
-    CRITICAL RULES FOR THE AI AGENT:
-    1. REPLIES: If replying to an existing comment thread, pass ONLY 'in_reply_to' (the parent comment ID) and 'body'. All other layout/line parameters will be automatically ignored by GitHub.
-    2. FILE-LEVEL COMMENTS: If leaving a general comment on a file (not a specific line), set `subject_type="file"`. Do not provide line or side numbers.
-    3. SINGLE-LINE COMMENTS: Set `subject_type="line"`. Provide `line` and `side`. Leave `start_line` and `start_side` as None.
-    4. MULTI-LINE COMMENTS: Set `subject_type="line"`. You MUST provide all four: `start_line`, `start_side`, `line`, and `side`.
+    Creates a review comment on the diff of a specified Pull Request.
+
+    USAGE MODES — pick exactly one:
+
+    1. REPLY TO EXISTING COMMENT:
+       - Required: body, in_reply_to
+       - All other parameters (commit_id, path, line, etc.) are ignored by GitHub.
+
+    2. FILE-LEVEL COMMENT (no specific line):
+       - Required: body, commit_id, path
+       - Do NOT pass line, start_line, side, or start_side.
+
+    3. SINGLE-LINE COMMENT:
+       - Required: body, commit_id, path, line
+       - Optional: side (default "RIGHT")
+       - Do NOT pass start_line or start_side.
+
+    4. MULTI-LINE COMMENT:
+       - Required: body, commit_id, path, line, side, start_line, start_side
+       - line = last line of the range; start_line = first line of the range.
+
+    PARAMETER RULES:
+    - commit_id: MUST be the full 40-character SHA (not abbreviated). Required for modes 2, 3, 4.
+    - path: Relative file path (e.g., 'src/utils/helpers.py'). Required for modes 2, 3, 4.
+    - side: LEFT = deleted lines (red). RIGHT = added or context lines (green/white). Defaults to RIGHT.
+    - start_side: Can be LEFT, RIGHT, or "side". Required if start_line is provided.
+    - in_reply_to: When set, GitHub ignores all parameters except body.
+    - Do NOT pass subject_type — it conflicts with GitHub's request schema and will cause a 422 error.
 
     Args:
-        owner (str): The account owner of the repository (case-insensitive).
-        repo (str): The name of the repository without the '.git' extension (case-insensitive).
-        pull_number (int): The numeric ID of the pull request.
-        body (str): The markdown text of your review comment.
-        commit_id (str): The full SHA of the commit needing a comment. MUST match the most recent commit in the PR diff to avoid being marked 'outdated'.
-        path (str): The relative path to the file being commented on (e.g., 'src/utils/helpers.py').
-        subject_type (Literal["line", "file"]): The target level of the comment. Defaults to "line".
-        line (int, optional): The line number in the file where the comment applies. For multi-line comments, this is the ENDING line of the range. Required unless subject_type is "file" or replying.
-        side (Literal["LEFT", "RIGHT"], optional): In a split diff, 'LEFT' targets deleted code (red), 'RIGHT' targets added/modified/context code (green/white). Defaults to "RIGHT".
-        start_line (int, optional): The starting line number of a multi-line comment range.
-        start_side (Literal["LEFT", "RIGHT"], optional): The starting side of a multi-line comment range. Usually matches 'side'.
-        in_reply_to (int, optional): The unique ID of an existing review comment if you are thread-replying.
+        owner (str): REQUIRED. Repository owner (case-insensitive).
+        repo (str): REQUIRED. Repository name without '.git' (case-insensitive).
+        pr_number (int): REQUIRED. The numeric PR ID.
+        body (str): REQUIRED. Markdown text of the review comment.
+        commit_id (str, optional): Full 40-char SHA of the commit. Required unless using in_reply_to.
+        path (str, optional): Relative file path being commented on. Required unless using in_reply_to.
+        line (int, optional): Last (or only) line of the comment range. Required for line-level comments.
+        side (Literal["LEFT", "RIGHT"], optional): Diff side for the line. Defaults to "RIGHT".
+        start_line (int, optional): First line for multi-line comments.
+        start_side (Literal["LEFT", "RIGHT", "side"], optional): Diff side for start_line. Required if start_line is set.
+        in_reply_to (int, optional): ID of comment to reply to. When set, all other params except body are ignored.
 
     Returns:
-        str: A markdown-formatted string confirming successful creation or detailed error diagnostics.
+        str: Markdown-formatted confirmation or error diagnostics.
     """
-    return git_tools.put_pr_review_comment(owner,repo,pr_number,
-                                           body,commit_id,path,subject_type,line,side,
-                                           start_line,start_side,in_reply_to)
+    return git_tools.put_pr_review_comment(
+        owner, repo, pr_number, body, commit_id, path,
+        line, side, start_line, start_side, in_reply_to
+    )
      
 
 @mcp.tool()

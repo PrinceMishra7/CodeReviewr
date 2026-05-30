@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 # uv add langchain-mcp-adapters
 from langchain_mcp_adapters.client import MultiServerMCPClient
 # uv add langchain-google-genai
@@ -9,6 +11,12 @@ from langchain.agents import create_agent
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+
+# langchain_google_genai warns for unsupported JSON schema keys like
+# `additionalProperties`; this does not affect tool execution.
+logging.getLogger("langchain_google_genai._function_utils").setLevel(logging.ERROR)
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
@@ -48,6 +56,12 @@ async def main():
         - Performance
         - Maintainability
         - Testing
+
+        STRICT TOOL RULES — follow exactly, no exceptions:
+        - When calling put_review_comment_on_pr you MUST always supply: owner, repo, pr_number, body, commit_id, path.
+        - NEVER pass subject_type — it is not a valid parameter.
+        - NEVER omit owner or repo — they are always required.
+        - Do NOT invent parameters that are not listed in the tool schema.
         """
     )
 

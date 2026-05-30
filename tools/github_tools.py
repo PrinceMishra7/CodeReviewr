@@ -136,9 +136,9 @@ def get_commits_in_pr(owner:str, repo:str,pr_number:int):
             date = commit.get("commit", {}).get("author", {}).get("date").split('T')[0]
             message = commit.get('commit',{}).get('message').replace("\n"," ")
             author = commit.get('commit',{}).get('author').get('name')
-            sha = commit.get('sha')[:7]
+            sha = commit.get('sha')
             commit_detail = f"| `{sha}` | {author} | {date} | {message} |"
-            commit_details.append(commit_detail)  
+            commit_details.append(commit_detail)
         
         return "\n".join(commit_details)
     
@@ -336,22 +336,19 @@ def get_project_structure(owner: str, repo: str, branch: str = "main"):
         return f"An unexpected error occurred: {str(e)}"
 
 
-
-
 def put_pr_review_comment(
-        owner:str,
-        repo:str,
-        pr_number:int,
-        body:str,
-        commit_id:str,
-        path:str,
-        subject_type: Literal["file","line"] = "line",
-        line:Optional[int] = None,
-        side:Optional[Literal["LEFT","RIGHT"]] = "RIGHT",
-        start_line:Optional[int] = None,
-        start_side:Optional[Literal["LEFT","RIGHT"]] = None,
-        in_reply_to:Optional[int] = None
-        )->str:
+        owner: str,
+        repo: str,
+        pr_number: int,
+        body: str,
+        commit_id: Optional[str] = None,   # not needed for in_reply_to
+        path: Optional[str] = None,         # not needed for in_reply_to
+        line: Optional[int] = None,
+        side: Optional[Literal["LEFT", "RIGHT"]] = "RIGHT",
+        start_line: Optional[int] = None,
+        start_side: Optional[Literal["LEFT", "RIGHT", "side"]] = None,  # ← "side" added
+        in_reply_to: Optional[int] = None
+        ) -> str:
 
     headers = {
         "Accept": "application/vnd.github+json",
@@ -359,59 +356,78 @@ def put_pr_review_comment(
         "X-GitHub-Api-Version": "2026-03-10"
     }
 
-    payload = {
-        "body":body
-    }
+    payload = {"body": body}
 
     if in_reply_to is not None:
+        # GitHub ignores everything except body when in_reply_to is set
         payload["in_reply_to"] = in_reply_to
     else:
-        payload.update({
-            "commit_id" : commit_id,
-            "path":path,
-            "subject_type": subject_type
-        })
+        # commit_id and path are required for all non-reply comments
+        if not commit_id:
+            return "## Error: 'commit_id' is required when not replying to an existing comment."
+        if not path:
+            return "## Error: 'path' is required when not replying to an existing comment."
 
-        if subject_type == "line":
+        payload["commit_id"] = commit_id
+        payload["path"] = path
+
+        if 1 == 2:
+            # File-level comment: line is NOT required
+            payload["subject_type"] = "file"
+        else:
+            # Line-level comment (default): line IS required
             if line is None:
-                return "## Error: 'line' parameter is required when subject_type is 'line' ."
+                return "## Error: 'line' is required."
             payload["line"] = line
             payload["side"] = side
-        
-        if start_line is not None:
-            if start_side is None:
-                return "## Error: 'start_side' must be provided if 'start_line' is defined for multi-line targets."
-            payload["start_line"] = start_line
-            payload["start_side"] = start_side
+
+            if start_line is not None:
+                if start_side is None:
+                    return "## Error: 'start_side' is required when 'start_line' is provided."
+                payload["start_line"] = start_line
+                payload["start_side"] = start_side
+
+            # if subject_type is not None:
+            #     payload["subject_type"] = subject_type  # explicitly "line"
 
     url = f"{GITHUB_URL}/repos/{owner}/{repo}/pulls/{pr_number}/comments"
-    
+
     try:
-        response = requests.post(url,headers=headers,json=payload,verify=certifi.where())
+        print("DEBUG create review comment payload:")
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        response = requests.post(url, headers=headers, json=payload, verify=certifi.where())
         response.raise_for_status()
         data = response.json()
-        # Extracting variables accurately from the top-level keys of your sample payload
+
         comment_id = data.get("id")
         html_url = data.get("html_url")
-        path = data.get("path")
-        line = data.get("line")
-        reply_to_id = data.get("in_reply_to_id")  # In response, it uses 'in_reply_to_id'
+        res_path = data.get("path")
+        res_line = data.get("line")
+        res_subject_type = data.get("subject_type")
+        reply_to_id = data.get("in_reply_to_id")
 
-        # Build a robust response markdown report based on what actually came back
         report = ["## PR Review Comment Posted Successfully"]
         report.append(f"**Comment ID**: `{comment_id}`")
-        
+
         if reply_to_id:
             report.append(f"**Context**: Thread reply to Comment ID `{reply_to_id}`")
+        elif res_subject_type == "file":
+            report.append(f"**File-level comment on**: `{res_path}`")
         else:
-            report.append(f"**File**: `{path}` (Line {line})")
-            
+            report.append(f"**File**: `{res_path}` (Line {res_line})")
+
         if html_url:
             report.append(f"**Link**: [View Comment on GitHub]({html_url})")
 
         return "\n".join(report)
+
     except requests.exceptions.HTTPError as http_err:
-        # Safely extract GitHub's custom validation messages if they exist
+        print("DEBUG create review comment failed:")
+        print(f"status={http_err.response.status_code if http_err.response is not None else 'unknown'}")
+        if http_err.response is not None:
+            print("response text:")
+            print(http_err.response.text)
+
         error_details = ""
         try:
             error_details = f"\nGitHub API Message: {http_err.response.json().get('message')}"
@@ -556,7 +572,7 @@ def list_pull_request_review_comments(owner:str,repo:str,pr_number:int,sort:Opti
     params = {
         "sort":sort,
         "direction":direction,
-        "per_page":page,
+        "per_page":per_page,
         "page":page
     }
 
@@ -568,7 +584,7 @@ def list_pull_request_review_comments(owner:str,repo:str,pr_number:int,sort:Opti
     try:
         response = requests.get(url,headers=headers,params=params,verify=certifi.where())
         response.raise_for_status()
-
+        
         comments_list = response.json()
 
         if not comments_list:
@@ -614,9 +630,9 @@ if __name__ == "__main__":
     # get_pr_details("PrinceMishra7", "CodeReviewr",3)
     # commits = get_commits_in_pr("PrinceMishra7", "CodeReviewr",3)
     # get_pr_files("PrinceMishra7", "CodeReviewr",3)
-    result = get_content_of_file("PrinceMishra7", "CodeReviewr","tools/jira_tools.py","main")
-    print(result)
-    # get_readme("PrinceMishra7", "CodeReviewr")
+    # result = get_content_of_file("PrinceMishra7", "CodeReviewr","tools/jira_tools.py","main")
+    # print(result)
+    get_readme("PrinceMishra7", "CodeReviewr")
     # get_project_struct("PrinceMishra7","CodeReviewr","folder_struct")
 
 
